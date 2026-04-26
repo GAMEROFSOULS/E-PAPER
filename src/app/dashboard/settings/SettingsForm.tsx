@@ -13,42 +13,26 @@ type ClientData = {
   custom_domain: string | null
 }
 
-const BASE_SUBDOMAIN_HOST = process.env.NEXT_PUBLIC_BASE_SUBDOMAIN_HOST || 'epaper.edgemindlab.cloud'
-
-function isValidSubdomain(value: string): boolean {
-  return /^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(value) || /^[a-z0-9]$/.test(value)
-}
-
 export default function SettingsForm({ client }: { client: ClientData }) {
   const [siteName, setSiteName] = useState(client.site_name)
   const [themeColor, setThemeColor] = useState(client.theme_color || '#dc2626')
   const [logoUrl, setLogoUrl] = useState(client.logo_url || '')
-  const [subdomain, setSubdomain] = useState(client.subdomain || '')
-  const [customDomain, setCustomDomain] = useState(client.custom_domain || '')
+  
+  // Parse custom_domain back to root domain if it starts with epaper.
+  const initialRootDomain = (client.custom_domain || '').replace(/^epaper\./, '')
+  const [rootDomain, setRootDomain] = useState(initialRootDomain)
+  
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [subdomainError, setSubdomainError] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
-  const handleSubdomainChange = (value: string) => {
-    const clean = value.toLowerCase().replace(/[^a-z0-9-]/g, '')
-    setSubdomain(clean)
-    if (clean && !isValidSubdomain(clean)) {
-      setSubdomainError('Only lowercase letters, numbers, and hyphens. Must not start or end with a hyphen.')
-    } else {
-      setSubdomainError(null)
-    }
-  }
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (subdomain && !isValidSubdomain(subdomain)) {
-      setSubdomainError('Invalid subdomain format.')
-      return
-    }
     setSaving(true)
     setMessage(null)
+
+    const fullCustomDomain = rootDomain ? `epaper.${rootDomain}` : null
 
     const { error } = await supabase
       .from('clients')
@@ -56,14 +40,13 @@ export default function SettingsForm({ client }: { client: ClientData }) {
         site_name: siteName,
         theme_color: themeColor,
         logo_url: logoUrl || null,
-        subdomain: subdomain || null,
-        custom_domain: customDomain || null,
+        custom_domain: fullCustomDomain,
       })
       .eq('id', client.id)
 
     if (error) {
       if (error.message.includes('unique') || error.code === '23505') {
-        setMessage('Error: That subdomain is already taken. Please choose a different one.')
+        setMessage(`Error: The domain ${fullCustomDomain} is already registered to another account.`)
       } else {
         setMessage('Error saving settings: ' + error.message)
       }
@@ -74,7 +57,11 @@ export default function SettingsForm({ client }: { client: ClientData }) {
     setSaving(false)
   }
 
-  const previewUrl = subdomain ? `https://${subdomain}.${BASE_SUBDOMAIN_HOST}` : null
+  const previewUrl = rootDomain ? `https://epaper.${rootDomain}` : null
+  
+  // HOSTINGER INSTRUCTIONS
+  // The user hosts the main app on Hostinger. They should replace this IP with their actual Hostinger VPS/Panel IP.
+  const HOSTINGER_IP = "YOUR_HOSTINGER_SERVER_IP" 
 
   return (
     <form onSubmit={handleSave} className="bg-white border rounded-xl p-6 shadow-sm flex flex-col gap-6">
@@ -122,104 +109,69 @@ export default function SettingsForm({ client }: { client: ClientData }) {
         />
       </div>
 
-      {/* ── Platform Subdomain ── */}
+      {/* ── Client Custom Domain ── */}
       <div className="flex flex-col gap-2 border-t pt-6 mt-2">
-        <h3 className="text-lg font-medium">Your Epaper Subdomain</h3>
+        <h3 className="text-lg font-medium">Domain Settings</h3>
         <p className="text-sm text-gray-500 mb-2">
-          Choose a unique slug for your publication. Your readers will visit{' '}
-          <span className="font-mono font-semibold text-gray-700">[slug].{BASE_SUBDOMAIN_HOST}</span>
+          Your e-paper will be available at <span className="font-mono font-semibold text-blue-700">epaper.[your-domain].com</span>
         </p>
 
-        <label htmlFor="subdomain" className="text-sm font-medium">Subdomain Slug</label>
+        <label htmlFor="root_domain" className="text-sm font-medium">Your Root Domain</label>
         <div className="flex items-center gap-0 border rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-600">
+          <span className="px-3 py-2 bg-gray-50 border-r text-sm text-gray-500 font-mono whitespace-nowrap font-semibold">
+            epaper.
+          </span>
           <input
             type="text"
-            id="subdomain"
-            value={subdomain}
-            onChange={(e) => handleSubdomainChange(e.target.value)}
-            placeholder="your-publication"
-            maxLength={50}
-            className="flex-1 px-4 py-2 focus:outline-none bg-white"
+            id="root_domain"
+            value={rootDomain}
+            onChange={(e) => {
+              let val = e.target.value.toLowerCase().trim()
+              val = val.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/^epaper\./, '')
+              setRootDomain(val)
+            }}
+            placeholder="dawngroup.com"
+            pattern="^[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}$"
+            className="flex-1 px-4 py-2 focus:outline-none bg-white font-mono"
           />
-          <span className="px-3 py-2 bg-gray-50 border-l text-sm text-gray-500 font-mono whitespace-nowrap">
-            .{BASE_SUBDOMAIN_HOST}
-          </span>
         </div>
 
-        {subdomainError && (
-          <p className="text-xs text-red-600">{subdomainError}</p>
-        )}
-
-        {previewUrl && !subdomainError && (
-          <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-xs font-semibold text-blue-700 mb-1">✓ Your public URL will be:</p>
-            <a
-              href={previewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-sm text-blue-700 hover:underline break-all"
-            >
-              {previewUrl}
-            </a>
-          </div>
-        )}
-      </div>
-
-      {/* ── Custom Domain (Advanced) ── */}
-      <div className="flex flex-col gap-2 border-t pt-6 mt-2">
-        <h3 className="text-lg font-medium">Custom Domain <span className="text-sm font-normal text-gray-500">(Advanced / Optional)</span></h3>
-        <p className="text-sm text-gray-500 mb-2">
-          If you own a domain like <span className="font-mono">epaper.yoursite.com</span>, enter it here. Leave empty to use your subdomain above.
-        </p>
-
-        <label htmlFor="custom_domain" className="text-sm font-medium">Domain Name</label>
-        <input
-          type="text"
-          id="custom_domain"
-          value={customDomain}
-          onChange={(e) => setCustomDomain(e.target.value.toLowerCase())}
-          placeholder="epaper.example.com"
-          pattern="^[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}$"
-          title="Please enter a valid domain name (e.g., epaper.example.com)"
-          className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-600 focus:outline-none"
-        />
-
-        {customDomain && (
+        {rootDomain && (
           <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-            <p className="font-semibold mb-2 text-gray-900 border-b pb-2">DNS Configuration Required</p>
+            <p className="font-semibold mb-2 text-gray-900 border-b pb-2">Hostinger DNS Configuration Required</p>
             <p className="text-gray-600 mb-4">
-              Point <span className="font-mono font-semibold">{customDomain}</span> to this app by adding a CNAME record:
+              To connect your domain, log into your domain registrar (GoDaddy, Namecheap, Hostinger, etc.) and add the following <strong>A Record</strong>:
             </p>
 
             <div className="space-y-4">
               <div className="bg-white p-3 border rounded">
-                <span className="block text-xs font-bold text-gray-500 uppercase mb-2">Via CNAME (Vercel/Netlify/Cloudflare)</span>
                 <div className="flex flex-col gap-1 *:flex *:justify-between *:items-center">
-                  <div><span className="font-medium text-gray-500 text-xs">Type</span><span className="font-mono text-sm select-all font-semibold">CNAME</span></div>
-                  <div><span className="font-medium text-gray-500 text-xs">Name</span><span className="font-mono text-sm select-all">{customDomain.split('.')[0] === 'www' ? 'www' : customDomain.split('.').length > 2 ? customDomain.split('.')[0] : '@'}</span></div>
-                  <div><span className="font-medium text-gray-500 text-xs">Target</span><span className="font-mono text-sm select-all">{process.env.NEXT_PUBLIC_APP_DOMAIN || 'your-main-app-domain.com'}</span></div>
+                  <div><span className="font-medium text-gray-500 text-xs">Type</span><span className="font-mono text-sm select-all font-semibold text-blue-700">A Record</span></div>
+                  <div><span className="font-medium text-gray-500 text-xs">Name / Host</span><span className="font-mono text-sm select-all font-semibold">epaper</span></div>
+                  <div><span className="font-medium text-gray-500 text-xs">Points to / Target</span><span className="font-mono text-sm select-all">{HOSTINGER_IP}</span></div>
                 </div>
               </div>
             </div>
+            <p className="text-xs text-gray-500 mt-3 italic">Note: DNS propagation can take up to 24 hours.</p>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-4 pt-2">
+      <div className="flex items-center gap-4 pt-4 border-t">
         <button
           type="submit"
-          disabled={saving || !!subdomainError}
+          disabled={saving}
           className="px-6 py-2.5 bg-gray-900 text-white rounded-md font-medium hover:bg-gray-800 disabled:opacity-50 transition-colors"
         >
           {saving ? 'Saving...' : 'Save Settings'}
         </button>
-        {(subdomain || customDomain) && (
+        {previewUrl && (
           <a
-            href={previewUrl || (customDomain ? `https://${customDomain}` : `/client/${client.id}`)}
+            href={previewUrl}
             target="_blank"
             className="text-sm font-medium text-blue-600 hover:underline"
           >
-            Preview Public Site →
+            Preview Live Site →
           </a>
         )}
       </div>

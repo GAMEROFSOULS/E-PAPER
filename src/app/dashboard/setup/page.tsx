@@ -1,7 +1,5 @@
 import { saveClientSetup } from './actions'
 
-const BASE_SUBDOMAIN_HOST = process.env.NEXT_PUBLIC_BASE_SUBDOMAIN_HOST || 'epaper.edgemindlab.cloud'
-
 export default function SetupPage() {
   return (
     <div className="max-w-2xl mx-auto mt-10 p-6 bg-white border rounded-xl shadow-sm">
@@ -21,36 +19,39 @@ export default function SetupPage() {
           />
         </div>
 
-        {/* ── Subdomain (the key field) ── */}
-        <div className="flex flex-col gap-2">
-          <label htmlFor="subdomain" className="text-sm font-medium">
-            Your Subdomain <span className="text-red-500">*</span>
+        {/* ── Client Custom Domain ── */}
+        <div className="flex flex-col gap-2 border p-4 rounded-lg bg-gray-50">
+          <label htmlFor="client_domain" className="text-sm font-medium">
+            Your Root Domain <span className="text-red-500">*</span>
           </label>
-          <p className="text-xs text-gray-500">
-            This is your unique address. Choose wisely — readers will visit{' '}
-            <span className="font-mono font-semibold text-gray-700">[slug].{BASE_SUBDOMAIN_HOST}</span>
+          <p className="text-xs text-gray-500 mb-2">
+            Enter your main website domain (e.g., <span className="font-mono text-gray-700">dawngroup.com</span>). 
+            Your e-paper will be available at <span className="font-mono font-semibold text-blue-700">epaper.dawngroup.com</span>
           </p>
-          <div className="flex items-center gap-0 border rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-600">
+          <div className="flex items-center gap-0 border rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-600 bg-white">
+            <span className="px-3 py-2 bg-gray-100 border-r text-sm text-gray-600 font-mono font-medium whitespace-nowrap">
+              epaper.
+            </span>
             <input
               type="text"
-              name="subdomain"
-              id="subdomain"
+              name="client_domain"
+              id="client_domain"
               required
-              placeholder="your-publication"
-              maxLength={50}
-              pattern="^[a-z0-9][a-z0-9\-]*[a-z0-9]$|^[a-z0-9]$"
-              title="Lowercase letters, numbers, and hyphens only. Must not start or end with a hyphen."
-              className="flex-1 px-4 py-2 focus:outline-none bg-white"
+              placeholder="yourwebsite.com"
+              pattern="^[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}$"
+              title="Enter a valid root domain, like yourwebsite.com"
+              className="flex-1 px-4 py-2 focus:outline-none bg-white font-mono text-sm"
               onInput={(e) => {
                 const el = e.currentTarget
-                el.value = el.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                // Strip http://, https://, www., and epaper. if they accidentally paste it
+                let val = el.value.toLowerCase().trim()
+                val = val.replace(/^https?:\/\//, '')
+                val = val.replace(/^www\./, '')
+                val = val.replace(/^epaper\./, '')
+                el.value = val
               }}
             />
-            <span className="px-3 py-2 bg-gray-50 border-l text-sm text-gray-500 font-mono whitespace-nowrap">
-              .{BASE_SUBDOMAIN_HOST}
-            </span>
           </div>
-          <p className="text-xs text-gray-400">Only lowercase letters, numbers, and hyphens. Example: <span className="font-mono">dawn-epaper</span></p>
         </div>
         
         <div className="flex flex-col gap-2">

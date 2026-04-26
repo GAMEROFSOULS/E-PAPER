@@ -8,7 +8,6 @@ const INTERNAL_HOSTS = new Set([
   'reallygen.com',
   'www.reallygen.com',
   process.env.NEXT_PUBLIC_APP_DOMAIN,
-  process.env.NEXT_PUBLIC_BASE_SUBDOMAIN_HOST,  // apex of the subdomain base (e.g. epaper.edgemindlab.cloud)
 ].filter(Boolean) as string[])
 
 function getCleanHost(request: NextRequest): string {
@@ -57,64 +56,29 @@ export async function updateSession(request: NextRequest) {
   const host = getCleanHost(request)
   const { pathname } = request.nextUrl
 
-  // The base subdomain host, e.g. "epaper.edgemindlab.cloud"
-  const BASE_SUBDOMAIN_HOST = process.env.NEXT_PUBLIC_BASE_SUBDOMAIN_HOST || ''
-
   // Only intercept non-internal hosts that aren't Next.js internal paths
   if (!isInternalHost(host) && !pathname.startsWith('/api/') && !pathname.startsWith('/_next/')) {
-    let clientId: string | null = null
-
-    // ── Strategy 1: Platform subdomain (e.g. dawn.epaper.edgemindlab.cloud) ──
-    // Check if this host is a subdomain of our BASE_SUBDOMAIN_HOST
-    if (
-      BASE_SUBDOMAIN_HOST &&
-      host !== BASE_SUBDOMAIN_HOST &&
-      host.endsWith(`.${BASE_SUBDOMAIN_HOST}`)
-    ) {
-      // Extract the subdomain slug: "dawn.epaper.edgemindlab.cloud" → "dawn"
-      const slug = host.slice(0, host.length - BASE_SUBDOMAIN_HOST.length - 1)
-
-      if (slug && !slug.includes('.')) {
-        // Single-level slug — look up the client by subdomain column
-        const { data: clientRow } = await supabase
-          .from('clients')
-          .select('id')
-          .eq('subdomain', slug)
-          .single()
-
-        if (clientRow?.id) {
-          clientId = clientRow.id
-        }
-      }
-    }
-
-    // ── Strategy 2: Fully custom domain (e.g. epaper.dawngroup.com) ──────────
-    if (!clientId) {
-      const { data: clientRow } = await supabase
-        .from('clients')
-        .select('id')
-        .eq('custom_domain', host)
-        .single()
-
-      if (clientRow?.id) {
-        clientId = clientRow.id
-      }
-    }
+    
+    // Look up which client owns this custom domain (e.g., epaper.client.com)
+    const { data: clientRow } = await supabase
+      .from('clients')
+      .select('id')
+      .eq('custom_domain', host)
+      .single()
 
     // ── Rewrite to the client's page if matched ───────────────────────────────
-    if (clientId) {
+    if (clientRow?.id) {
       // Transparent rewrite: browser URL stays as-is,
       // but Next.js serves the /client/[id] page
       const rewriteUrl = request.nextUrl.clone()
       const subPath = pathname === '/' ? '' : pathname
-      rewriteUrl.pathname = `/client/${clientId}${subPath}`
+      rewriteUrl.pathname = `/client/${clientRow.id}${subPath}`
       return NextResponse.rewrite(rewriteUrl)
     }
 
     // ── Unknown custom domain (not matched in DB) ─────────────────────────────
     // Only block if the host looks like a real custom domain (has a dot)
-    // Don't block the base subdomain host itself (shows the marketing page)
-    if (host.includes('.') && host !== BASE_SUBDOMAIN_HOST) {
+    if (host.includes('.')) {
       const errorUrl = request.nextUrl.clone()
       errorUrl.pathname = '/domain-not-found'
       return NextResponse.rewrite(errorUrl)
