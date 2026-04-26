@@ -43,10 +43,24 @@ const WhatsAppIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill=
 type EpaperIssue = { id: string; title: string | null; file_url: string; published_date: string }
 type Post = { id: string; title: string; content: string | null; image_url: string | null; is_headline: boolean }
 type Ad = { id: string; title: string; position: string; image_url: string; link_url: string | null }
+type Mapping = {
+  id: string
+  page_id: string
+  article_id: string | null
+  title: string | null
+  shape: 'rect'
+  x: number
+  y: number
+  width: number
+  height: number
+  target_type: 'article' | 'clipping' | 'external_url' | 'popup'
+  target_value: string | null
+  sort_order: number
+}
 export default function EpaperViewer({ 
-  issues, posts, ads = [], clientName, themeColor, clientId, logoUrl = null
+  issues, posts, ads = [], mappings = [], clientName, themeColor, clientId, logoUrl = null
 }: { 
-  issues: EpaperIssue[]; posts: Post[]; ads?: Ad[]; clientName: string; themeColor: string; clientId: string; logoUrl?: string | null
+  issues: EpaperIssue[]; posts: Post[]; ads?: Ad[]; mappings?: Mapping[]; clientName: string; themeColor: string; clientId: string; logoUrl?: string | null
 }) {
   const [currentPage, setCurrentPage] = useState(0)
   const [pdfNumPages, setPdfNumPages] = useState<number | null>(null)
@@ -71,6 +85,8 @@ export default function EpaperViewer({
   const [copied, setCopied] = useState(false)
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [overlaySize, setOverlaySize] = useState({ width: 0, height: 0 })
+  const [activeClip, setActiveClip] = useState<Mapping | null>(null)
   
   const containerRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
@@ -89,6 +105,16 @@ export default function EpaperViewer({
     setCurrentPage(0)
     setZoom(1)
   }, [activeIssueId])
+
+  useEffect(() => {
+    const img = imageRef.current
+    if (!img) return
+    const update = () => setOverlaySize({ width: img.clientWidth, height: img.clientHeight })
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(img)
+    return () => observer.disconnect()
+  }, [displayIssue?.id, zoom, viewMode])
 
   // Filter Ads
   const topBanners = ads.filter(a => a.position === 'top_banner')
@@ -425,6 +451,24 @@ export default function EpaperViewer({
   }
 
   const headlines = posts.filter(p => p.is_headline).map(p => p.title)
+  const currentMappings = (displayIssue ? mappings.filter((item) => item.page_id === displayIssue.id) : [])
+    .slice()
+    .sort((a, b) => a.sort_order - b.sort_order)
+
+  const handleMappingClick = (mapping: Mapping) => {
+    if (mapping.target_type === 'external_url' && mapping.target_value) {
+      window.open(mapping.target_value, '_blank', 'noopener,noreferrer')
+      return
+    }
+    if (mapping.target_type === 'clipping' || mapping.target_type === 'popup') {
+      setActiveClip(mapping)
+      return
+    }
+    const articleId = mapping.article_id || mapping.target_value
+    if (articleId) {
+      window.location.href = `/client/${clientId}/news?articleId=${encodeURIComponent(articleId)}`
+    }
+  }
 
   /* ─────────── Render ─────────── */
   return (
@@ -447,6 +491,15 @@ export default function EpaperViewer({
                   <MenuBtn icon={<IconFull />} label="Full Page View" active={viewMode === 'full'} onClick={() => { setViewMode('full'); setShowMainMenu(false) }} />
                   <MenuBtn icon={<IconGrid />} label="Thumbnail View" active={viewMode === 'thumb'} onClick={() => { setViewMode('thumb'); setShowMainMenu(false) }} />
                   <MenuBtn icon={<IconList />} label="Page List View" active={viewMode === 'list'} onClick={() => { setViewMode('list'); setShowMainMenu(false) }} />
+                  <MenuBtn
+                    icon={<IconAreaMap />}
+                    label="Button"
+                    active={isAreaMapping}
+                    onClick={() => {
+                      toggleAreaMap()
+                      setShowMainMenu(false)
+                    }}
+                  />
                 </div>
               </div>
             )}
@@ -488,6 +541,12 @@ export default function EpaperViewer({
         {/* CENTER */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
           <ToolbarBtn onClick={() => {}} title="Bookmark"><IconBookmark /></ToolbarBtn>
+          <ToolbarBtn onClick={toggleAreaMap} title="Button" active={isAreaMapping}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700 }}>
+              <IconAreaMap />
+              Button
+            </span>
+          </ToolbarBtn>
 
           <ToolbarBtn onClick={() => setZoom(z => Math.min(z + 0.25, 3))} title="Zoom In"><IconZoomIn /></ToolbarBtn>
           <ToolbarBtn onClick={() => setZoom(z => Math.max(z - 0.25, 0.5))} title="Zoom Out"><IconZoomOut /></ToolbarBtn>
@@ -725,6 +784,38 @@ export default function EpaperViewer({
                           Click and drag on the page to map the area to cut and share.
                         </div>
                       )}
+
+                      {!isPDF && !isAreaMapping && !selectedArea && overlaySize.width > 0 && currentMappings.length > 0 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            top: 0,
+                            width: overlaySize.width,
+                            height: overlaySize.height,
+                            zIndex: 15,
+                          }}
+                        >
+                          {currentMappings.map((mapping) => (
+                            <button
+                              key={mapping.id}
+                              type="button"
+                              title={mapping.title || 'Mapped area'}
+                              onClick={() => handleMappingClick(mapping)}
+                              style={{
+                                position: 'absolute',
+                                left: `${mapping.x * 100}%`,
+                                top: `${mapping.y * 100}%`,
+                                width: `${mapping.width * 100}%`,
+                                height: `${mapping.height * 100}%`,
+                                background: 'rgba(37, 99, 235, 0.14)',
+                                border: '1px solid rgba(37, 99, 235, 0.7)',
+                                cursor: 'pointer',
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
                 </div>
               </div>
@@ -831,6 +922,35 @@ export default function EpaperViewer({
             @keyframes spin { to { transform: rotate(360deg); } }
             @keyframes scaleIn { from { transform: translateX(-50%) scale(0.9); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
           `}</style>
+        </div>
+      )}
+
+      {activeClip && (
+        <div
+          onClick={() => setActiveClip(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 300,
+            background: 'rgba(0,0,0,0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{ background: '#fff', borderRadius: '12px', maxWidth: '560px', width: '100%', padding: '18px' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#111', fontWeight: 700 }}>{activeClip.title || 'Clip details'}</h3>
+              <button onClick={() => setActiveClip(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}><IconX /></button>
+            </div>
+            <p style={{ margin: 0, color: '#374151', lineHeight: 1.5 }}>
+              {activeClip.target_value || 'No clipping content is linked yet for this mapped area.'}
+            </p>
+          </div>
         </div>
       )}
 

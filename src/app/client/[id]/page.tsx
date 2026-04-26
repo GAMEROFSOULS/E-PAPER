@@ -33,11 +33,21 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
     .eq('client_id', resolvedParams.id)
     .eq('is_active', true)
 
+  const pageIds = (epapers || []).map((item) => item.id)
+  const { data: mappings } = pageIds.length > 0
+    ? await supabase
+        .from('epaper_page_mappings')
+        .select('*')
+        .in('page_id', pageIds)
+        .order('sort_order', { ascending: true })
+    : { data: [] }
+
   return (
     <EpaperWrapper 
       issues={epapers || []}
       posts={posts || []}
       ads={ads || []}
+      mappings={mappings || []}
       clientName={clientData?.site_name || 'E-Paper'}
       themeColor={clientData?.theme_color || '#dc2626'}
       clientId={resolvedParams.id}
