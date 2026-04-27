@@ -41,15 +41,6 @@ export default function SetupPage() {
               pattern="^[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}$"
               title="Enter a valid root domain, like yourwebsite.com"
               className="flex-1 px-4 py-2 focus:outline-none bg-white font-mono text-sm"
-              onInput={(e) => {
-                const el = e.currentTarget
-                // Strip http://, https://, www., and epaper. if they accidentally paste it
-                let val = el.value.toLowerCase().trim()
-                val = val.replace(/^https?:\/\//, '')
-                val = val.replace(/^www\./, '')
-                val = val.replace(/^epaper\./, '')
-                el.value = val
-              }}
             />
           </div>
         </div>
